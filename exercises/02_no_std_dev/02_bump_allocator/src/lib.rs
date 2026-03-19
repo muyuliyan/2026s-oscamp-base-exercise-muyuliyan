@@ -6,7 +6,7 @@
 //!
 //! A Bump Allocator maintains a pointer `next` to the "next available address".
 //! On each allocation, it aligns `next` to the requested alignment, then advances by `size` bytes.
-//! It does not support freeing individual objects (`dealloc` is a no-op).
+//! It does not support freeing individual objects (`dealloc` is a no-op).***
 //!
 //! ```text
 //! heap_start                              heap_end
@@ -74,7 +74,18 @@ unsafe impl GlobalAlloc for BumpAllocator {
         // 5. Atomically update next to end using compare_exchange
         //    (if CAS fails, another thread raced — retry in a loop)
         // 6. Return the aligned address as a pointer
-        todo!()
+        let mut current = self.next.load(Ordering::SeqCst);
+        loop {
+            let aligned = (current + layout.align() - 1) & !(layout.align() - 1);
+            let end = aligned.checked_add(layout.size());
+            if end.is_none() || end.unwrap() > self.heap_end {
+                return null_mut();
+            };
+            match self.next.compare_exchange(current, end.unwrap(), Ordering::SeqCst, Ordering::SeqCst) {
+                Ok(_) => return aligned as *mut u8,
+                Err(next_current) => current = next_current,
+            };
+        };
     }
 
     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
@@ -97,7 +108,13 @@ mod tests {
         let alloc = unsafe { BumpAllocator::new(start, start + HEAP_SIZE) };
         (alloc, heap)
     }
-
+    // 测试分为以下几个方面：
+    // 1. 基本分配：测试能否成功分配内存，并返回非空指针。
+    // 2. 对齐要求：测试分配的地址是否满足不同的对齐要求（1, 2, 4, 8, 16, 64）。
+    // 3. 不重叠：测试连续分配的内存块是否不重叠。
+    // 4. 超出堆大小：测试当请求的内存超过剩余堆大小时，是否正确返回 null。
+    // 5. 填满堆：测试连续分配直到堆满时，最后一次分配是否返回 null。
+    // 6. 重置功能：测试调用 reset 后，是否能重新分配整个堆。
     #[test]
     fn test_alloc_basic() {
         let (alloc, _heap) = make_allocator();

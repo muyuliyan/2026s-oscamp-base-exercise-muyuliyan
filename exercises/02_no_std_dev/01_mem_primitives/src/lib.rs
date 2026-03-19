@@ -25,15 +25,15 @@
 /// `dst` and `src` must each point to at least `n` bytes of valid memory.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn my_memcpy(dst: *mut u8, src: *const u8, n: usize) -> *mut u8 {
+    // TODO: Implement memcpy
+    // Hint: read bytes from src one by one and write to dst
     let mut i = 0;
     while i < n {
-        // SAFETY: Caller guarantees `dst` and `src` are valid for `n` bytes and non-overlapping.
-        unsafe {
-            *dst.add(i) = *src.add(i);
-        }
+        // SAFETY: caller guarantees dst and src are valid for n bytes
+        let byte = unsafe { *src.add(i) };
+        unsafe { *dst.add(i) = byte };
         i += 1;
     }
-
     dst
 }
 
@@ -48,9 +48,7 @@ pub unsafe extern "C" fn my_memset(dst: *mut u8, c: u8, n: usize) -> *mut u8 {
     // TODO: Implement memset
     let mut i = 0;
     while i < n {
-        unsafe {
-            *dst.add(i) = c;
-        }
+        unsafe { *dst.add(i) = c };
         i += 1;
     }
     dst
@@ -67,25 +65,21 @@ pub unsafe extern "C" fn my_memmove(dst: *mut u8, src: *const u8, n: usize) -> *
     // TODO: Implement memmove
     // Hint: when dst > src and regions overlap, copy backwards (from end to start)
     let mut i = 0;
-    if dst as usize > src as usize && (dst as usize) < (src as usize + n) {
-        // Overlap with dst after src, copy backwards
+    if (dst as usize) < (src as usize) {
+        while i < n {
+            let byte = unsafe { *src.add(i) };
+            unsafe { *dst.add(i) = byte };
+            i += 1;
+        }
+    } else {
         i = n;
         while i > 0 {
             i -= 1;
-            unsafe {
-                *dst.add(i) = *src.add(i);
-            }
-        }
-    else {
-        // No overlap or dst before src, copy forwards
-        while i < n {
-            unsafe {
-                *dst.add(i) = *src.add(i);
-            }
-            i += 1;
+            let byte = unsafe { *src.add(i) };
+            unsafe { *dst.add(i) = byte };
         }
     }
-    dst   
+    dst
 }
 
 /// Return the length of a null-terminated byte string, excluding the trailing null.
@@ -94,7 +88,13 @@ pub unsafe extern "C" fn my_memmove(dst: *mut u8, src: *const u8, n: usize) -> *
 /// `s` must point to a valid null-terminated byte string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn my_strlen(s: *const u8) -> usize {
-    
+    let mut i = 0;
+    // 对 s.add(i) 解引用是危险操作，因为我们不知道 s 是否指向一个有效的内存地址，或者 s 是否真的以 null 结尾。
+    // 所以需要unsafe块来告诉编译器我们知道自己在做什么，并且保证在使用 s.add(i) 时不会发生未定义行为。
+    while unsafe { *s.add(i) } != 0 {
+        i += 1;
+    }
+    i
 }
 
 /// Compare two null-terminated byte strings.
@@ -108,8 +108,19 @@ pub unsafe extern "C" fn my_strlen(s: *const u8) -> usize {
 /// `s1` and `s2` must each point to a valid null-terminated byte string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn my_strcmp(s1: *const u8, s2: *const u8) -> i32 {
-    // TODO: Implement strcmp
-    todo!()
+    let mut i = 0;
+    loop {
+        let c1 = unsafe{*s1.add(i)};
+        let c2 = unsafe{*s2.add(i)};
+        if c1 != c2 {
+            return (c1 as i32) - (c2 as i32);
+        }
+        if c1 == 0 {
+            break;
+        }
+        i += 1;
+    }
+    0
 }
 
 // ============================================================
